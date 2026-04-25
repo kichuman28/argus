@@ -1,4 +1,4 @@
-import type { GeneratedPersona, RunMode } from "./types";
+import type { GeneratedPersona, RunMode, WebsiteDiscovery } from "./types";
 
 const basePersonas: GeneratedPersona[] = [
   {
@@ -82,6 +82,82 @@ const chaosExtras: GeneratedPersona[] = [
 
 export function fallbackPersonas(mode: RunMode): GeneratedPersona[] {
   return mode === "chaos" ? [...basePersonas, ...chaosExtras].slice(0, 20) : basePersonas;
+}
+
+export function discoveryAwareFallbackPersonas(mode: RunMode, discovery: WebsiteDiscovery | null): GeneratedPersona[] {
+  const fallback = fallbackPersonas(mode);
+  if (!discovery) return fallback;
+  const keywords = new Set(discovery.keywords);
+  const routesAndButtons = [...discovery.routes, ...discovery.buttons, ...discovery.headings].join(" ").toLowerCase();
+  const tailored: GeneratedPersona[] = [];
+
+  if (keywords.has("signup") || routesAndButtons.includes("sign")) {
+    tailored.push({
+      name: "Nova, Signup Path Breaker",
+      goal: "Create an account and challenge validation rules discovered on the site.",
+      behavior: "Uses visible signup CTAs, mismatched passwords, invalid emails, missing terms, and double submits.",
+      viewport: "desktop",
+      riskType: "onboarding"
+    });
+  }
+  if (keywords.has("login") || routesAndButtons.includes("log in")) {
+    tailored.push({
+      name: "Rey, Returning Login User",
+      goal: "Log in, recover password, and check error handling.",
+      behavior: "Submits wrong credentials, tries forgot-password links, and watches loading states.",
+      viewport: "desktop",
+      riskType: "authentication"
+    });
+  }
+  if (keywords.has("checkout") || keywords.has("cart") || keywords.has("pricing") || keywords.has("coupon")) {
+    tailored.push({
+      name: "Pia, Checkout Buyer",
+      goal: "Reach checkout, change purchase details, and test payment-like fields.",
+      behavior: "Clicks pricing or cart links, applies coupon-like values, and fills card-shaped inputs.",
+      viewport: "desktop",
+      riskType: "conversion"
+    });
+  }
+  if (keywords.has("search")) {
+    tailored.push({
+      name: "Lex, Search Injection Tester",
+      goal: "Search with empty, markup-like, and SQL-like queries.",
+      behavior: "Submits blank searches and suspicious strings, then checks reflected output.",
+      viewport: "desktop",
+      riskType: "security"
+    });
+  }
+  if (keywords.has("dashboard") || keywords.has("campaign") || keywords.has("modal")) {
+    tailored.push({
+      name: "Mina, Dashboard Operator",
+      goal: "Open dashboard workflows, create items, and test modal behavior.",
+      behavior: "Clicks create/edit/delete controls, presses Escape in modals, and checks labels.",
+      viewport: "desktop",
+      riskType: "functional"
+    });
+  }
+  if (discovery.accessibilityHints.length || discovery.forms.length) {
+    tailored.push({
+      name: "Orin, Accessibility Reviewer",
+      goal: "Review form names, button labels, images, modal semantics, and keyboard reachability.",
+      behavior: "Tabs through controls, inspects accessible names, and checks missing labels.",
+      viewport: "desktop",
+      riskType: "accessibility"
+    });
+  }
+
+  tailored.push({
+    name: "Mika, Mobile Navigation User",
+    goal: "Use the discovered navigation on a narrow phone viewport.",
+    behavior: "Opens mobile menus, taps visible nav items, and watches for overlap or clipped controls.",
+    viewport: "mobile",
+    riskType: "responsive"
+  });
+
+  const unique = [...tailored, ...fallback].filter(
+    (persona, index, list) => list.findIndex((candidate) => candidate.name === persona.name) === index
+  );
+  return unique.slice(0, mode === "chaos" ? 20 : 8);
 }
 
 export function viewportForPersona(viewport: string) {

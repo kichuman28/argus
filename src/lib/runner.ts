@@ -6,6 +6,7 @@ import {
   getPersonas,
   getRun,
   getScenarioResults,
+  insertRunEvent,
   insertScenarioResult,
   replaceBugs,
   updateBugStatuses,
@@ -13,8 +14,8 @@ import {
 } from "./db";
 import { createId, nowIso } from "./ids";
 import { inputForRisk, viewportForPersona } from "./personas";
-import { stringifyJson } from "./json";
-import type { Persona, Run, ScenarioResult, ScenarioStatus, ScenarioStep } from "./types";
+import { parseJson, stringifyJson } from "./json";
+import type { Persona, Run, RunEventKind, ScenarioResult, ScenarioStatus, ScenarioStep, WebsiteDiscovery } from "./types";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -50,32 +51,43 @@ async function runArgus(runId: string, purpose: "full" | "verify") {
   const run = getRun(runId);
   if (!run) return;
   updateRunStatus(runId, "running");
+  console.log(`[Argus Runner] ${runId}: ${purpose === "verify" ? "verification" : "full"} run started.`);
+  logEvent(runId, null, "action", purpose === "verify" ? "Verifying failed scenarios." : "Starting autonomous browser run.");
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ headless: true });
     const personas = selectPersonasForPurpose(runId, purpose);
+    console.log(`[Argus Runner] ${runId}: launching ${personas.length} persona scenario(s).`);
     for (const persona of personas) {
+      console.log(`[Argus Runner] ${runId}: running persona "${persona.name}" (${persona.riskType}).`);
       const result = await runPersona(browser, run, persona);
       insertScenarioResult(result);
+      console.log(`[Argus Runner] ${runId}: persona "${persona.name}" finished as ${result.status}.`);
     }
 
     const latestResults = getScenarioResults(runId);
     if (purpose === "full") {
+      console.log(`[Argus Analysis] ${runId}: analyzing ${latestResults.length} scenario result(s).`);
       const bugs = await createBugCards({
         url: run.url,
         mode: run.mode,
+        discovery: parseJson<WebsiteDiscovery | null>(run.discoveryJson, null),
         personas: getPersonas(runId),
         results: latestResults
       });
       replaceBugs(runId, bugs);
+      console.log(`[Argus Analysis] ${runId}: saved ${bugs.length} bug card(s).`);
     } else {
       const verificationResults = latestResults.slice(-personas.length);
       const fixed = verificationResults.every((result) => result.status === "passed");
       updateBugStatuses(runId, fixed ? "verified_fixed" : "still_failing");
     }
+    logEvent(runId, null, "complete", purpose === "verify" ? "Verification pass complete." : "Run complete. Bug report assembled.");
     updateRunStatus(runId, "complete", true);
+    console.log(`[Argus Runner] ${runId}: run complete.`);
   } catch (error) {
     console.error("Argus runner failed", error);
+    logEvent(runId, null, "error", error instanceof Error ? error.message : "Argus runner failed.");
     updateRunStatus(runId, "failed", true);
   } finally {
     await browser?.close().catch(() => undefined);
@@ -111,6 +123,7 @@ async function runPersona(browser: Browser, run: Run, persona: Persona): Promise
   const networkErrors: string[] = [];
   const screenshots: string[] = [];
   const steps: ScenarioStep[] = [];
+  logEvent(run.id, persona.id, "persona", `${persona.name} is checking: ${persona.goal}`);
 
   page.on("console", (msg) => {
     if (["error", "warning"].includes(msg.type())) consoleErrors.push(`${msg.type()}: ${msg.text()}`.slice(0, 500));
@@ -126,9 +139,11 @@ async function runPersona(browser: Browser, run: Run, persona: Persona): Promise
   try {
     await page.goto(run.url, { waitUntil: "domcontentloaded", timeout: 15000 });
     steps.push({ label: "Opened target page", ok: true, detail: page.url() });
+    logEvent(run.id, persona.id, "action", `${persona.name} opened ${page.url()}.`);
     await screenshot(page, run.id, persona, "before", screenshots);
   } catch (error) {
     steps.push({ label: "Open target page", ok: false, detail: error instanceof Error ? error.message : "Navigation failed" });
+    logEvent(run.id, persona.id, "error", `${persona.name} could not load the target page.`);
     await page.setContent(demoFailureHtml(run.url, persona.name));
     await screenshot(page, run.id, persona, "navigation-failed", screenshots);
     await context.close().catch(() => undefined);
@@ -152,6 +167,7 @@ async function runPersona(browser: Browser, run: Run, persona: Persona): Promise
     status === "passed"
       ? `${persona.name} completed exploratory checks without obvious blocking failures.`
       : `${persona.name} found ${failedSteps.length + consoleErrors.length + networkErrors.length} signals worth reviewing.`;
+  logEvent(run.id, persona.id, status === "passed" ? "complete" : "finding", summary);
 
   await context.close().catch(() => undefined);
   return finishResult(run, persona, resultId, status, summary, steps, screenshots, consoleErrors, networkErrors, startedAt);
@@ -171,6 +187,7 @@ async function fillVisibleInputs(page: Page, runId: string, persona: Persona, st
     await input.fill(value).catch(() => undefined);
   }
   steps.push({ label: "Filled visible fields with persona-relevant data", ok: true, detail: `${count} fields touched.` });
+  logEvent(runId, persona.id, "action", `${persona.name} filled ${count} visible field(s).`);
   await screenshot(page, runId, persona, "during", screenshots);
 }
 
@@ -188,6 +205,7 @@ async function clickLikelyTargets(page: Page, persona: Persona, steps: ScenarioS
     await preferred.first().click({ timeout: 2500 }).catch(() => undefined);
     await page.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => undefined);
     steps.push({ label: "Clicked likely goal-oriented CTA", ok: true, detail: targetText.toString() });
+    logEvent(persona.runId, persona.id, "action", `${persona.name} clicked a goal-oriented action.`);
     return;
   }
 
@@ -200,6 +218,7 @@ async function clickLikelyTargets(page: Page, persona: Persona, steps: ScenarioS
   await generic.click({ timeout: 2500 }).catch(() => undefined);
   await page.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => undefined);
   steps.push({ label: "Clicked first visible interactive element", ok: true });
+  logEvent(persona.runId, persona.id, "action", `${persona.name} clicked the first visible interactive control.`);
 }
 
 async function keyboardProbe(page: Page, persona: Persona, steps: ScenarioStep[]) {
@@ -208,6 +227,7 @@ async function keyboardProbe(page: Page, persona: Persona, steps: ScenarioStep[]
   await page.keyboard.press("Enter").catch(() => undefined);
   const focused = await page.evaluate(() => document.activeElement?.tagName ?? "none").catch(() => "unknown");
   steps.push({ label: "Keyboard navigation probe", ok: focused !== "BODY", detail: `Focused element: ${focused}` });
+  logEvent(persona.runId, persona.id, "action", `${persona.name} ran a keyboard navigation probe.`);
 }
 
 async function accessibilityProbe(page: Page, steps: ScenarioStep[]) {
@@ -241,7 +261,25 @@ async function screenshot(page: Page, runId: string, persona: Persona, label: st
   const diskPath = path.join(process.cwd(), "public", "runs", runId, fileName);
   fs.mkdirSync(path.dirname(diskPath), { recursive: true });
   await page.screenshot({ path: diskPath, fullPage: true }).catch(() => undefined);
-  screenshots.push(`/runs/${runId}/${fileName}`);
+  const publicPath = `/runs/${runId}/${fileName}`;
+  screenshots.push(publicPath);
+  logEvent(runId, persona.id, "screenshot", `${persona.name} captured ${label} evidence.`, publicPath);
+}
+
+function logEvent(runId: string, personaId: string | null, kind: RunEventKind, message: string, screenshotPath: string | null = null) {
+  try {
+    insertRunEvent({
+      id: createId("event"),
+      runId,
+      personaId,
+      kind,
+      message,
+      screenshotPath,
+      createdAt: nowIso()
+    });
+  } catch {
+    // Event logging should never stop the browser runner.
+  }
 }
 
 function finishResult(

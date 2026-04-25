@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
-import type { Bug, Persona, Run, RunBundle, RunMode, RunStatus, ScenarioResult } from "./types";
+import type { Bug, Persona, Run, RunBundle, RunEvent, RunMode, RunStatus, ScenarioResult } from "./types";
 import { nowIso } from "./ids";
 
 const dbPath = path.join(process.cwd(), "argus.sqlite");
@@ -19,7 +19,8 @@ function getDb() {
       mode TEXT NOT NULL,
       status TEXT NOT NULL,
       createdAt TEXT NOT NULL,
-      finishedAt TEXT
+      finishedAt TEXT,
+      discoveryJson TEXT
     );
     CREATE TABLE IF NOT EXISTS personas (
       id TEXT PRIMARY KEY,
@@ -56,14 +57,27 @@ function getDb() {
       patchSuggestion TEXT,
       status TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS run_events (
+      id TEXT PRIMARY KEY,
+      runId TEXT NOT NULL,
+      personaId TEXT,
+      kind TEXT NOT NULL,
+      message TEXT NOT NULL,
+      screenshotPath TEXT,
+      createdAt TEXT NOT NULL
+    );
   `);
+  const runColumns = db.pragma("table_info(runs)") as Array<{ name: string }>;
+  if (!runColumns.some((column) => column.name === "discoveryJson")) {
+    db.exec("ALTER TABLE runs ADD COLUMN discoveryJson TEXT");
+  }
   return db;
 }
 
 export function createRun(run: Run) {
   getDb()
-    .prepare("INSERT INTO runs (id, url, mode, status, createdAt, finishedAt) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(run.id, run.url, run.mode, run.status, run.createdAt, run.finishedAt);
+    .prepare("INSERT INTO runs (id, url, mode, status, createdAt, finishedAt, discoveryJson) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(run.id, run.url, run.mode, run.status, run.createdAt, run.finishedAt, run.discoveryJson);
 }
 
 export function updateRunStatus(id: string, status: RunStatus, finished = false) {
@@ -74,6 +88,10 @@ export function updateRunStatus(id: string, status: RunStatus, finished = false)
 
 export function getRun(id: string): Run | null {
   return (getDb().prepare("SELECT * FROM runs WHERE id = ?").get(id) as Run | undefined) ?? null;
+}
+
+export function updateRunDiscovery(id: string, discoveryJson: string) {
+  getDb().prepare("UPDATE runs SET discoveryJson = ? WHERE id = ?").run(discoveryJson, id);
 }
 
 export function insertPersonas(personas: Persona[]) {
@@ -114,6 +132,16 @@ export function insertScenarioResult(result: ScenarioResult) {
 
 export function getScenarioResults(runId: string): ScenarioResult[] {
   return getDb().prepare("SELECT * FROM scenario_results WHERE runId = ? ORDER BY startedAt ASC").all(runId) as ScenarioResult[];
+}
+
+export function insertRunEvent(event: RunEvent) {
+  getDb()
+    .prepare("INSERT INTO run_events (id, runId, personaId, kind, message, screenshotPath, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(event.id, event.runId, event.personaId, event.kind, event.message, event.screenshotPath, event.createdAt);
+}
+
+export function getRunEvents(runId: string): RunEvent[] {
+  return getDb().prepare("SELECT * FROM run_events WHERE runId = ? ORDER BY createdAt ASC").all(runId) as RunEvent[];
 }
 
 export function replaceBugs(runId: string, bugs: Bug[]) {
@@ -163,7 +191,8 @@ export function getRunBundle(id: string): RunBundle | null {
     run,
     personas: getPersonas(id),
     results: getScenarioResults(id),
-    bugs: getBugs(id)
+    bugs: getBugs(id),
+    events: getRunEvents(id)
   };
 }
 

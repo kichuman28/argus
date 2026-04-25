@@ -15,6 +15,9 @@ Most teams use AI to build faster. Argus uses AI to find what AI-built apps brok
 - Stores runs, personas, scenario results, and bug cards in local SQLite.
 - Uses OpenAI Responses API for persona generation and bug analysis when `OPENAI_API_KEY` is present.
 - Falls back to deterministic personas and heuristic bug analysis when no API key is configured.
+- Scouts the target app before testing and uses headings, routes, buttons, forms, and accessibility hints to tailor personas.
+- Shows a live event feed and latest screenshot while the runner is working.
+- Lets you click evidence screenshots to open a larger lightbox view.
 - Generates PR-style patch suggestions, with optional repo-path context via `ARGUS_REPO_PATH`.
 - Reruns failed scenarios through "Verify fix".
 
@@ -53,9 +56,11 @@ ARGUS_REPO_PATH=C:\path\to\your\app
 1. Enter a URL, for example `https://example.com` or a local app URL.
 2. Click `Launch Argus` for the default 8 personas.
 3. Click `Chaos Mode` for 20 edge-case personas.
-4. Watch the run dashboard poll every 1.5 seconds.
-5. Review personas, passed/failed flows, screenshots, severity badges, reproduction steps, suggested fixes, and patch text.
-6. Click `Verify fix` after changing the target app to rerun failed scenarios.
+4. Argus scouts the target app and creates website-aware personas.
+5. Watch the live event feed and latest screenshot update every 1.5 seconds.
+6. Review personas, passed/failed flows, screenshots, severity badges, reproduction steps, suggested fixes, and patch text.
+7. Click screenshots to inspect evidence in a larger view.
+8. Click `Verify fix` after changing the target app to rerun failed scenarios.
 
 ## Notes
 

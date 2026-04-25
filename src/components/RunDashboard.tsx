@@ -4,8 +4,8 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, CircleDashed, Code2, FlaskConical, Loader2, Radar, RefreshCw, TriangleAlert, Users } from "lucide-react";
-import type { Bug, Persona, Run, ScenarioResult } from "@/lib/types";
+import { CheckCircle2, CircleDashed, Code2, Expand, FlaskConical, Loader2, Radar, RefreshCw, SatelliteDish, TriangleAlert, Users, X } from "lucide-react";
+import type { Bug, Persona, Run, RunEvent, ScenarioResult, WebsiteDiscovery } from "@/lib/types";
 import { parseJson } from "@/lib/json";
 
 type Bundle = {
@@ -13,6 +13,7 @@ type Bundle = {
   personas: Persona[];
   results: ScenarioResult[];
   bugs: Bug[];
+  events: RunEvent[];
   active?: boolean;
 };
 
@@ -28,6 +29,7 @@ export default function RunDashboard() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patch, setPatch] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"verify" | "patch" | null>(null);
 
   const load = useCallback(async () => {
@@ -88,6 +90,9 @@ export default function RunDashboard() {
 
   const progress = bundle.personas.length ? Math.min(100, Math.round((bundle.results.length / bundle.personas.length) * 100)) : 0;
   const running = bundle.run.status === "running" || bundle.active;
+  const discovery = parseJson<WebsiteDiscovery | null>(bundle.run.discoveryJson, null);
+  const latestScreenshot = [...bundle.events].reverse().find((event) => event.screenshotPath)?.screenshotPath ?? discovery?.screenshotPath ?? null;
+  const recentEvents = [...bundle.events].slice(-12).reverse();
 
   return (
     <main className="min-h-screen bg-ink text-white">
@@ -105,7 +110,7 @@ export default function RunDashboard() {
               </span>
             </div>
             <h1 className="max-w-4xl text-3xl font-semibold leading-tight text-white md:text-5xl">{bundle.run.url}</h1>
-            <p className="mt-3 text-white/60">AI users deployed, Playwright evidence captured, report assembled live-ish.</p>
+            <p className="mt-3 text-white/60">AI users deployed, website-aware scenarios planned, Playwright evidence captured live.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
@@ -134,24 +139,58 @@ export default function RunDashboard() {
           <Metric icon={running ? <Loader2 className="h-5 w-5 animate-spin text-cyan" /> : <CircleDashed className="h-5 w-5 text-cyan" />} label="run status" value={bundle.run.status} />
         </section>
 
-        <section className="glass rounded-lg p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Progress timeline</h2>
-            <span className="text-sm text-white/55">{progress}%</span>
+        <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="glass rounded-lg p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Progress timeline</h2>
+              <span className="text-sm text-white/55">{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-acid transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-5 space-y-3">
+              {recentEvents.length ? (
+                recentEvents.map((event) => {
+                  const persona = bundle.personas.find((item) => item.id === event.personaId);
+                  return (
+                    <div key={event.id} className="flex gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3">
+                      <SatelliteDish className="mt-0.5 h-4 w-4 shrink-0 text-cyan" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{event.message}</p>
+                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{persona?.name ?? event.kind}</p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-white/55">Waiting for the browser runner to report in.</p>
+              )}
+            </div>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-acid transition-all" style={{ width: `${progress}%` }} />
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            {bundle.results.slice(-8).map((result) => {
-              const persona = bundle.personas.find((item) => item.id === result.personaId);
-              return (
-                <div key={result.id} className="rounded-md border border-white/10 bg-white/[0.045] p-3">
-                  <p className="truncate text-sm font-medium">{persona?.name ?? "Persona"}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.18em] text-white/45">{result.status}</p>
-                </div>
-              );
-            })}
+
+          <div className="glass rounded-lg p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Live evidence</h2>
+                <p className="mt-1 text-sm text-white/50">{discovery?.title ? `Scouted: ${discovery.title}` : "Latest screenshot appears here."}</p>
+              </div>
+              {latestScreenshot ? (
+                <button
+                  onClick={() => setLightbox(latestScreenshot)}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-white/12 bg-white/7 px-3 text-sm hover:bg-white/10"
+                >
+                  <Expand className="h-4 w-4 text-acid" />
+                  Enlarge
+                </button>
+              ) : null}
+            </div>
+            {latestScreenshot ? (
+              <button onClick={() => setLightbox(latestScreenshot)} className="block w-full overflow-hidden rounded-md border border-white/10 bg-black/40 text-left">
+                <Image src={latestScreenshot} alt="Latest Argus evidence" width={1100} height={680} className="max-h-[28rem] w-full object-cover" unoptimized />
+              </button>
+            ) : (
+              <div className="flex min-h-72 items-center justify-center rounded-md border border-dashed border-white/14 text-white/45">No screenshot captured yet.</div>
+            )}
           </div>
         </section>
 
@@ -164,6 +203,7 @@ export default function RunDashboard() {
                   <div>
                     <h3 className="font-semibold">{persona.name}</h3>
                     <p className="mt-1 text-sm leading-6 text-white/58">{persona.goal}</p>
+                    <p className="mt-2 text-xs leading-5 text-white/42">{persona.behavior}</p>
                   </div>
                   <span className="shrink-0 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/55">{persona.riskType}</span>
                 </div>
@@ -174,7 +214,7 @@ export default function RunDashboard() {
           <section className="space-y-4">
             <h2 className="text-xl font-semibold">Bug cards</h2>
             {bundle.bugs.length ? (
-              bundle.bugs.map((bug) => <BugCard key={bug.id} bug={bug} personas={bundle.personas} />)
+              bundle.bugs.map((bug) => <BugCard key={bug.id} bug={bug} personas={bundle.personas} onOpenScreenshot={setLightbox} />)
             ) : (
               <div className="glass rounded-lg p-8 text-center text-white/60">
                 <FlaskConical className="mx-auto mb-3 h-8 w-8 text-acid" />
@@ -193,6 +233,7 @@ export default function RunDashboard() {
           </section>
         ) : null}
       </div>
+      {lightbox ? <ScreenshotLightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </main>
   );
 }
@@ -207,7 +248,7 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
-function BugCard({ bug, personas }: { bug: Bug; personas: Persona[] }) {
+function BugCard({ bug, personas, onOpenScreenshot }: { bug: Bug; personas: Persona[]; onOpenScreenshot: (src: string) => void }) {
   const persona = personas.find((item) => item.id === bug.personaId);
   const steps = parseJson<Array<{ label: string; ok: boolean; detail?: string }>>(bug.reproductionStepsJson, []);
   const evidence = parseJson<{ screenshots?: string[]; consoleErrors?: string[]; networkErrors?: string[]; summary?: string }>(bug.evidenceJson, {});
@@ -218,7 +259,7 @@ function BugCard({ bug, personas }: { bug: Bug; personas: Persona[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold">{bug.title}</h3>
-          <p className="mt-1 text-sm text-white/50">{persona?.name ?? "General finding"} · {bug.category} · {bug.status}</p>
+          <p className="mt-1 text-sm text-white/50">{persona?.name ?? "General finding"} / {bug.category} / {bug.status}</p>
         </div>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${severityClass[bug.severity] ?? severityClass.low}`}>
           {bug.severity}
@@ -228,15 +269,19 @@ function BugCard({ bug, personas }: { bug: Bug; personas: Persona[] }) {
       {screenshots.length ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {screenshots.slice(0, 2).map((src) => (
-            <Image
-              key={src}
-              src={src}
-              alt="Argus evidence screenshot"
-              width={720}
-              height={405}
-              className="aspect-video w-full rounded-md border border-white/10 object-cover"
-              unoptimized
-            />
+            <button key={src} onClick={() => onOpenScreenshot(src)} className="group relative overflow-hidden rounded-md border border-white/10 bg-black/40 text-left">
+              <Image
+                src={src}
+                alt="Argus evidence screenshot"
+                width={720}
+                height={405}
+                className="aspect-video w-full object-cover transition group-hover:scale-[1.02]"
+                unoptimized
+              />
+              <span className="absolute right-2 top-2 rounded-md bg-black/65 p-2 opacity-0 transition group-hover:opacity-100">
+                <Expand className="h-4 w-4 text-acid" />
+              </span>
+            </button>
           ))}
         </div>
       ) : null}
@@ -255,5 +300,30 @@ function BugCard({ bug, personas }: { bug: Bug; personas: Persona[] }) {
         <pre className="mt-4 max-h-72 overflow-auto rounded-md border border-white/10 bg-black/60 p-3 text-xs leading-5 text-white/70">{bug.patchSuggestion}</pre>
       ) : null}
     </article>
+  );
+}
+
+function ScreenshotLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/88 p-4" onClick={onClose}>
+      <button
+        onClick={onClose}
+        className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/14 bg-white/10 hover:bg-white/15"
+        aria-label="Close screenshot"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <div className="max-h-[92vh] max-w-6xl overflow-auto rounded-lg border border-white/12 bg-black" onClick={(event) => event.stopPropagation()}>
+        <Image src={src} alt="Expanded Argus evidence screenshot" width={1600} height={1000} className="h-auto w-full" unoptimized />
+      </div>
+    </div>
   );
 }

@@ -80,7 +80,7 @@ function heuristicBugs(input: FailureAnalysisInput): GeneratedBug[] {
       category: "ux",
       reproductionStepsJson: first.stepsJson,
       evidenceJson: stringifyJson({ screenshots: parseJson<string[]>(first.screenshotsJson, []) }),
-      suggestedFix: "The happy path survived. For a stronger demo, verify edge states: blank forms, failed requests, slow loading, keyboard focus, and post-submit success copy.",
+      suggestedFix: `The happy path survived. For a stronger demo, verify edge states around ${input.discovery?.keywords.join(", ") || "blank forms, failed requests, slow loading, keyboard focus, and post-submit success copy"}.`,
       patchSuggestion: null
     });
   }
