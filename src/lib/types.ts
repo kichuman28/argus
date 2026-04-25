@@ -78,6 +78,7 @@ export type GeneratedPersona = Omit<Persona, "id" | "runId">;
 export type WebsiteDiscovery = {
   title: string;
   description: string;
+  aiDescription: string | null;
   headings: string[];
   buttons: string[];
   links: Array<{ text: string; href: string }>;

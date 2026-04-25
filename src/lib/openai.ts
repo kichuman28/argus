@@ -30,6 +30,86 @@ const bugSchema = z.object({
   )
 });
 
+const siteDescriptionSchema = z.object({
+  description: z.string().min(1)
+});
+
+function responseSchemaFor(schemaName: string) {
+  if (schemaName === "argus_personas") {
+    return {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        personas: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              goal: { type: "string" },
+              behavior: { type: "string" },
+              viewport: { type: "string" },
+              riskType: { type: "string" }
+            },
+            required: ["name", "goal", "behavior", "viewport", "riskType"]
+          }
+        }
+      },
+      required: ["personas"]
+    };
+  }
+
+  if (schemaName === "argus_bugs") {
+    return {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        bugs: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              personaId: { type: ["string", "null"] },
+              title: { type: "string" },
+              severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
+              category: {
+                type: "string",
+                enum: ["ux", "functional", "performance", "accessibility", "security", "unknown"]
+              },
+              reproductionStepsJson: { type: "string" },
+              evidenceJson: { type: "string" },
+              suggestedFix: { type: "string" },
+              patchSuggestion: { type: ["string", "null"] }
+            },
+            required: [
+              "personaId",
+              "title",
+              "severity",
+              "category",
+              "reproductionStepsJson",
+              "evidenceJson",
+              "suggestedFix",
+              "patchSuggestion"
+            ]
+          }
+        }
+      },
+      required: ["bugs"]
+    };
+  }
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      description: { type: "string" }
+    },
+    required: ["description"]
+  };
+}
+
 async function responsesJson<T>(prompt: string, schemaName: string): Promise<T | null> {
   if (!process.env.OPENAI_API_KEY) {
     console.log(`[Argus AI] ${schemaName}: OPENAI_API_KEY missing, skipping OpenAI.`);
@@ -49,62 +129,7 @@ async function responsesJson<T>(prompt: string, schemaName: string): Promise<T |
         format: {
           type: "json_schema",
           name: schemaName,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties:
-              schemaName === "argus_personas"
-                ? {
-                    personas: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        additionalProperties: false,
-                        properties: {
-                          name: { type: "string" },
-                          goal: { type: "string" },
-                          behavior: { type: "string" },
-                          viewport: { type: "string" },
-                          riskType: { type: "string" }
-                        },
-                        required: ["name", "goal", "behavior", "viewport", "riskType"]
-                      }
-                    }
-                  }
-                : {
-                    bugs: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        additionalProperties: false,
-                        properties: {
-                          personaId: { type: ["string", "null"] },
-                          title: { type: "string" },
-                          severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
-                          category: {
-                            type: "string",
-                            enum: ["ux", "functional", "performance", "accessibility", "security", "unknown"]
-                          },
-                          reproductionStepsJson: { type: "string" },
-                          evidenceJson: { type: "string" },
-                          suggestedFix: { type: "string" },
-                          patchSuggestion: { type: ["string", "null"] }
-                        },
-                        required: [
-                          "personaId",
-                          "title",
-                          "severity",
-                          "category",
-                          "reproductionStepsJson",
-                          "evidenceJson",
-                          "suggestedFix",
-                          "patchSuggestion"
-                        ]
-                      }
-                    }
-                  },
-            required: [schemaName === "argus_personas" ? "personas" : "bugs"]
-          },
+          schema: responseSchemaFor(schemaName),
           strict: true
         }
       }
@@ -124,6 +149,42 @@ async function responsesJson<T>(prompt: string, schemaName: string): Promise<T |
   }
   console.log(`[Argus AI] ${schemaName}: received structured output.`);
   return JSON.parse(text) as T;
+}
+
+export async function generateWebsiteDescription(url: string, discovery: WebsiteDiscovery): Promise<string | null> {
+  const prompt = `Argus has completed a browser discovery pass for ${url}.
+Return structured JSON with a concise website description in the "description" field.
+
+Requirements:
+- One or two sentences.
+- Describe what the website appears to be for, based only on the discovery data.
+- Mention important visible flows, such as auth, pricing, checkout, search, dashboards, forms, or docs, only when supported by the data.
+- Do not invent company claims, hidden features, or unavailable pages.
+
+Website discovery JSON:
+${stringifyJson({
+  title: discovery.title,
+  metaDescription: discovery.description,
+  headings: discovery.headings,
+  buttons: discovery.buttons,
+  routes: discovery.routes,
+  forms: discovery.forms,
+  keywords: discovery.keywords,
+  accessibilityHints: discovery.accessibilityHints
+})}`;
+
+  try {
+    const result = await responsesJson<unknown>(prompt, "argus_site_description");
+    const parsed = siteDescriptionSchema.safeParse(result);
+    if (parsed.success) {
+      console.log("[Argus AI] Site description: using OpenAI output.");
+      return parsed.data.description.trim();
+    }
+    console.warn("[Argus AI] Site description: OpenAI output was missing or invalid.");
+  } catch {
+    console.warn("[Argus AI] Site description: OpenAI generation threw.");
+  }
+  return null;
 }
 
 export async function generatePersonas(url: string, mode: RunMode, discovery: WebsiteDiscovery | null): Promise<GeneratedPersona[]> {

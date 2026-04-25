@@ -1,36 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, CheckCircle2, Flame, Loader2, Radar, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, Flame, Loader2, Radar, ShieldAlert, Terminal } from "lucide-react";
 
-const launchStages = [
-  "Validating target URL",
-  "Opening Playwright scout browser",
-  "Reading headings, links, buttons, and forms",
-  "Generating website-aware synthetic users",
-  "Starting autonomous QA runner"
-];
+type LaunchMode = "normal" | "chaos";
 
 export default function Home() {
   const router = useRouter();
-  const [url, setUrl] = useState("https://example.com");
-  const [loading, setLoading] = useState<"normal" | "chaos" | null>(null);
-  const [stageIndex, setStageIndex] = useState(0);
+  const [url, setUrl] = useState("");
+  const [mode, setMode] = useState<LaunchMode>("normal");
+  const [loading, setLoading] = useState<LaunchMode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const targetLabel = useMemo(() => formatTarget(url), [url]);
 
-  useEffect(() => {
-    if (!loading) {
-      setStageIndex(0);
+  async function launch() {
+    if (!url.trim()) {
+      setError("Enter a website URL.");
       return;
     }
-    const timer = window.setInterval(() => {
-      setStageIndex((current) => Math.min(current + 1, launchStages.length - 1));
-    }, 1300);
-    return () => window.clearInterval(timer);
-  }, [loading]);
 
-  async function launch(mode: "normal" | "chaos") {
     setError(null);
     setLoading(mode);
     try {
@@ -50,122 +39,186 @@ export default function Home() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
-      <div className="grid-sheen absolute inset-0 opacity-80" />
-      <section className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between">
+    <main className="relative min-h-screen overflow-hidden bg-ink text-white">
+      <div className="grid-sheen absolute inset-0 opacity-65" />
+      <section className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-6 sm:px-8">
+        <nav className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-acid/35 bg-acid/10 shadow-glow">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-acid/40 bg-acid/10 shadow-glow">
               <Radar className="h-5 w-5 text-acid" />
             </div>
-            <span className="text-lg font-semibold tracking-wide">Argus</span>
+            <div>
+              <div className="text-lg font-semibold">Argus</div>
+              <div className="font-mono text-[0.65rem] uppercase tracking-[0.24em] text-white/40">autonomous qa</div>
+            </div>
           </div>
-          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/72 sm:flex">
+          <div className="hidden items-center gap-2 border border-white/10 bg-white/[0.045] px-3 py-2 font-mono text-xs uppercase tracking-[0.16em] text-white/58 sm:flex">
             <ShieldAlert className="h-4 w-4 text-cyan" />
-            Autonomous QA for hackathon velocity
+            local-first browser agent
           </div>
         </nav>
 
-        <div className="grid flex-1 items-center gap-10 py-14 lg:grid-cols-[1.02fr_0.98fr]">
-          <div className="max-w-3xl">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm text-white/75">
-              <Sparkles className="h-4 w-4 text-acid" />
-              Most teams use AI to build faster. Argus uses AI to find what AI-built apps broke.
-            </div>
-            <h1 className="max-w-4xl text-5xl font-semibold leading-[1.02] tracking-normal text-white sm:text-7xl">
-              AI users that break your app, explain what failed, and prove the fix.
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">
-              Drop in a URL. Argus deploys synthetic QA personas, drives the site with Playwright, captures evidence, and turns failures into bug cards your team can act on.
+        <div className="grid flex-1 items-center gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)] lg:py-14">
+          <div className="max-w-4xl">
+            <p className="mb-5 font-mono text-xs uppercase tracking-[0.32em] text-acid">AI users that test the app you just shipped</p>
+            <h1 className="max-w-4xl text-5xl font-semibold leading-none text-white sm:text-7xl lg:text-8xl">Argus</h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/66">
+              Drop in a local, preview, or hosted URL. Argus scouts the page, asks AI to understand it, deploys synthetic users, and returns evidence-backed bug reports.
             </p>
 
-            <div className="mt-9 max-w-3xl rounded-lg border border-white/12 bg-black/30 p-3 shadow-2xl">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  className="min-h-14 flex-1 rounded-md border border-white/10 bg-white/8 px-4 text-base text-white outline-none transition placeholder:text-white/35 focus:border-acid/60"
-                  placeholder="https://your-hackathon-app.dev"
-                  inputMode="url"
-                />
+            <form
+              className="mt-9 max-w-3xl border border-white/12 bg-black/35 p-3 shadow-2xl backdrop-blur"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void launch();
+              }}
+            >
+              <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                <label className="min-w-0">
+                  <span className="sr-only">Website URL</span>
+                  <input
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    className="h-14 w-full border border-white/10 bg-white/[0.06] px-4 text-base text-white outline-none transition placeholder:text-white/32 focus:border-acid/70"
+                    placeholder="http://localhost:3001 or https://your-preview-url"
+                    inputMode="url"
+                  />
+                </label>
                 <button
-                  onClick={() => launch("normal")}
+                  type="submit"
                   disabled={loading !== null}
-                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md bg-acid px-5 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-14 items-center justify-center gap-2 bg-acid px-5 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Launch Argus
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => launch("chaos")}
-                  disabled={loading !== null}
-                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-pulse/55 bg-pulse/16 px-5 font-semibold text-white transition hover:bg-pulse/24 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Flame className="h-4 w-4 text-pulse" />
-                  Chaos Mode
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                  Launch
                 </button>
               </div>
-              {error ? <p className="mt-3 px-1 text-sm text-pulse">{error}</p> : null}
-              {loading ? <LaunchProgress mode={loading} stageIndex={stageIndex} /> : null}
-            </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <ModeButton active={mode === "normal"} disabled={loading !== null} label="Standard" onClick={() => setMode("normal")} />
+                <ModeButton active={mode === "chaos"} disabled={loading !== null} label="Chaos" onClick={() => setMode("chaos")} />
+              </div>
+
+              {error ? <p className="mt-3 border border-pulse/30 bg-pulse/10 px-3 py-2 text-sm text-pink-100">{error}</p> : null}
+              {loading ? <LaunchStatus mode={loading} target={targetLabel} /> : null}
+            </form>
           </div>
 
-          <div className="glass rounded-lg p-5">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <p className="text-sm uppercase tracking-[0.28em] text-acid">Live demo shape</p>
-                <h2 className="mt-2 text-2xl font-semibold">What Argus runs</h2>
-              </div>
-              <div className="rounded-md border border-white/10 bg-white/6 px-3 py-2 text-sm text-white/68">8 to 20 personas</div>
-            </div>
-            <div className="space-y-3">
-              {[
-                ["Synthetic users", "First-time, returning, mobile, keyboard, buyer, malicious, confused, accessibility-sensitive."],
-                ["Playwright evidence", "Screenshots before, during, and after. Console errors and failed requests are captured."],
-                ["Bug report", "Severity, category, reproduction steps, suggested fix, and PR-style patch text."],
-                ["Verify fix", "Reruns failed personas and marks bugs fixed or still failing."]
-              ].map(([title, text]) => (
-                <div key={title} className="rounded-md border border-white/10 bg-white/[0.045] p-4">
-                  <h3 className="font-semibold text-white">{title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-white/60">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <LaunchConsole mode={mode} target={targetLabel} loading={loading} error={error} hasTarget={Boolean(url.trim())} />
         </div>
       </section>
     </main>
   );
 }
 
-function LaunchProgress({ mode, stageIndex }: { mode: "normal" | "chaos"; stageIndex: number }) {
+function ModeButton({
+  active,
+  disabled,
+  label,
+  onClick
+}: {
+  active: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="mt-4 rounded-md border border-white/10 bg-white/[0.045] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-white">
-          <Loader2 className="h-4 w-4 animate-spin text-acid" />
-          Launching {mode === "chaos" ? "Chaos Mode" : "Argus"}
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex min-h-12 items-center justify-between border px-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        active ? "border-acid/60 bg-acid/12 text-white" : "border-white/10 bg-white/[0.035] text-white/58 hover:border-white/18 hover:text-white"
+      }`}
+    >
+      <span className="font-medium">{label}</span>
+      {label === "Chaos" ? <Flame className={active ? "h-4 w-4 text-pulse" : "h-4 w-4 text-white/38"} /> : <Radar className={active ? "h-4 w-4 text-acid" : "h-4 w-4 text-white/38"} />}
+    </button>
+  );
+}
+
+function LaunchConsole({
+  mode,
+  target,
+  loading,
+  error,
+  hasTarget
+}: {
+  mode: LaunchMode;
+  target: string;
+  loading: LaunchMode | null;
+  error: string | null;
+  hasTarget: boolean;
+}) {
+  const state = loading ? "creating-run" : error ? "blocked" : hasTarget ? "ready" : "idle";
+
+  return (
+    <aside className="shell-surface">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] text-white/48">
+          <Terminal className="h-4 w-4 text-cyan" />
+          launch console
         </div>
-        <span className="text-xs uppercase tracking-[0.18em] text-white/42">setup</span>
+        <div className="flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-pulse/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-300/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-acid/80" />
+        </div>
       </div>
-      <div className="space-y-2">
-        {launchStages.map((stage, index) => {
-          const done = index < stageIndex;
-          const active = index === stageIndex;
-          return (
-            <div key={stage} className="flex items-center gap-3 text-sm">
-              <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                  done ? "border-acid bg-acid text-black" : active ? "border-cyan text-cyan" : "border-white/12 text-white/25"
-                }`}
-              >
-                {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : active ? <span className="h-1.5 w-1.5 rounded-full bg-cyan" /> : null}
-              </span>
-              <span className={done || active ? "text-white/78" : "text-white/35"}>{stage}</span>
-            </div>
-          );
-        })}
+      <div className="space-y-4 p-5 font-mono text-sm">
+        <p className="text-white/76">
+          <span className="text-acid">$</span> argus launch
+        </p>
+        <ConsoleRow label="target" value={hasTarget ? target : "unset"} />
+        <ConsoleRow label="mode" value={mode} />
+        <ConsoleRow label="personas" value={mode === "chaos" ? "20" : "8"} />
+        <ConsoleRow label="state" value={state} tone={error ? "danger" : loading ? "active" : "default"} />
+        <div className="border-t border-white/10 pt-4 text-xs leading-6 text-white/42">
+          {loading ? "The run is being created. Discovery, AI site brief generation, and persona planning happen before the dashboard opens." : "The dashboard will use real discovery data, run events, screenshots, personas, and bug cards from the target."}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function ConsoleRow({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "active" | "danger" }) {
+  const toneClass = tone === "danger" ? "text-pink-100" : tone === "active" ? "text-acid" : "text-white/72";
+
+  return (
+    <div className="grid grid-cols-[6.5rem_1fr] gap-3">
+      <span className="text-white/34">{label}</span>
+      <span className={`min-w-0 break-words ${toneClass}`}>{value}</span>
+    </div>
+  );
+}
+
+function LaunchStatus({ mode, target }: { mode: LaunchMode; target: string }) {
+  return (
+    <div className="mt-4 border border-cyan/20 bg-cyan/8 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+        <Loader2 className="h-4 w-4 animate-spin text-cyan" />
+        Creating {mode} run
+      </div>
+      <div className="mt-3 space-y-1 font-mono text-xs leading-6 text-white/54">
+        <p>
+          <span className="text-acid">$</span> POST /api/runs
+        </p>
+        <p>target={target}</p>
+        <p>status=waiting-for-dashboard-handoff</p>
       </div>
     </div>
   );
+}
+
+function formatTarget(raw: string) {
+  const value = raw.trim();
+  if (!value) return "unset";
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const parsed = new URL(withProtocol);
+    return parsed.toString();
+  } catch {
+    return value;
+  }
 }

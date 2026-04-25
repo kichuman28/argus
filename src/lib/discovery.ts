@@ -74,6 +74,7 @@ export async function discoverWebsite(runId: string, url: string): Promise<Websi
 
     return {
       ...data,
+      aiDescription: null,
       routes,
       screenshotPath,
       keywords: keywordSignals([data.title, data.description, ...data.headings, ...data.buttons, ...routes].join(" "))
@@ -89,6 +90,7 @@ export function fallbackDiscovery(url: string): WebsiteDiscovery {
   return {
     title: new URL(url).hostname,
     description: "",
+    aiDescription: null,
     headings: [],
     buttons: [],
     links: [],

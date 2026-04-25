@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -16,7 +16,7 @@ import {
   Loader2,
   Radar,
   RefreshCw,
-  SatelliteDish,
+  Terminal,
   TriangleAlert,
   Users,
   X
@@ -109,10 +109,9 @@ export default function RunDashboard() {
   }
 
   const progress = bundle.personas.length ? Math.min(100, Math.round((bundle.results.length / bundle.personas.length) * 100)) : 0;
-  const running = bundle.run.status === "running" || bundle.active;
+  const running = bundle.run.status === "running" || Boolean(bundle.active);
   const discovery = parseJson<WebsiteDiscovery | null>(bundle.run.discoveryJson, null);
   const latestScreenshot = [...bundle.events].reverse().find((event) => event.screenshotPath)?.screenshotPath ?? discovery?.screenshotPath ?? null;
-  const recentEvents = [...bundle.events].slice(-12).reverse();
   const allScreenshots = Array.from(
     new Set([
       ...(discovery?.screenshotPath ? [discovery.screenshotPath] : []),
@@ -208,7 +207,7 @@ export default function RunDashboard() {
             {activeSection === "overview" ? (
               <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
                 <div className="space-y-6">
-                  <ProgressPanel progress={progress} events={recentEvents} personas={bundle.personas} />
+                  <RunLogs events={bundle.events} personas={bundle.personas} onOpenScreenshot={setLightbox} running={running} compact />
                   <UnderstandingCard discovery={discovery} compact onOpen={() => setActiveSection("understanding")} />
                 </div>
                 <EvidencePreview latestScreenshot={latestScreenshot} discovery={discovery} onOpenScreenshot={setLightbox} onOpenGallery={() => setActiveSection("evidence")} />
@@ -235,7 +234,7 @@ export default function RunDashboard() {
               </section>
             ) : null}
 
-            {activeSection === "logs" ? <RunLogs events={bundle.events} personas={bundle.personas} onOpenScreenshot={setLightbox} /> : null}
+            {activeSection === "logs" ? <RunLogs events={bundle.events} personas={bundle.personas} onOpenScreenshot={setLightbox} running={running} /> : null}
 
             {activeSection === "evidence" ? <EvidenceGallery screenshots={allScreenshots} onOpenScreenshot={setLightbox} /> : null}
 
@@ -311,38 +310,6 @@ function SidebarButton({
   );
 }
 
-function ProgressPanel({ progress, events, personas }: { progress: number; events: RunEvent[]; personas: Persona[] }) {
-  return (
-    <div className="glass rounded-lg p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Progress timeline</h2>
-        <span className="text-sm text-white/55">{progress}%</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-acid transition-all" style={{ width: `${progress}%` }} />
-      </div>
-      <div className="mt-5 space-y-3">
-        {events.length ? (
-          events.map((event) => {
-            const persona = personas.find((item) => item.id === event.personaId);
-            return (
-              <div key={event.id} className="flex gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3">
-                <SatelliteDish className="mt-0.5 h-4 w-4 shrink-0 text-cyan" />
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-medium">{event.message}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{persona?.name ?? event.kind}</p>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <p className="text-sm text-white/55">Waiting for the browser runner to report in.</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function EvidencePreview({
   latestScreenshot,
   discovery,
@@ -385,6 +352,7 @@ function UnderstandingCard({ discovery, compact = false, onOpen }: { discovery: 
   const forms = discovery?.forms ?? [];
   const buttons = discovery?.buttons ?? [];
   const hints = discovery?.accessibilityHints ?? [];
+  const aiDescription = discovery?.aiDescription?.trim();
 
   return (
     <div className="glass rounded-lg p-5">
@@ -398,6 +366,16 @@ function UnderstandingCard({ discovery, compact = false, onOpen }: { discovery: 
             Open
           </button>
         ) : null}
+      </div>
+      <div className="mb-5 border border-acid/20 bg-acid/[0.055] p-4">
+        <div className="mb-2 font-mono text-xs uppercase tracking-[0.18em] text-acid">AI site brief</div>
+        {aiDescription ? (
+          <p className="text-sm leading-6 text-white/74">{aiDescription}</p>
+        ) : (
+          <p className="text-sm leading-6 text-white/42">
+            {discovery ? "OpenAI did not return a site description for this run." : "Waiting for discovery and AI site description."}
+          </p>
+        )}
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <MiniStat label="routes" value={routes.length} />
@@ -510,39 +488,90 @@ function PersonaCard({ persona, result }: { persona: Persona; result?: ScenarioR
   );
 }
 
-function RunLogs({ events, personas, onOpenScreenshot }: { events: RunEvent[]; personas: Persona[]; onOpenScreenshot: (src: string) => void }) {
-  if (!events.length) {
-    return <div className="glass rounded-lg p-8 text-center text-white/55">Waiting for the first runner event.</div>;
-  }
+function RunLogs({
+  events,
+  personas,
+  onOpenScreenshot,
+  running,
+  compact = false
+}: {
+  events: RunEvent[];
+  personas: Persona[];
+  onOpenScreenshot: (src: string) => void;
+  running: boolean;
+  compact?: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const visibleEvents = compact ? events.slice(-10) : events;
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight });
+  }, [events.length]);
 
   return (
-    <div className="rounded-lg border border-white/10 bg-black/35">
-      <div className="max-h-[42rem] overflow-auto p-4">
-        <div className="space-y-3">
-          {[...events].reverse().map((event) => {
-            const persona = personas.find((item) => item.id === event.personaId);
-            return (
-              <div key={event.id} className="grid gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3 sm:grid-cols-[1fr_auto]">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-white/10 bg-black/24 px-2 py-1 text-xs uppercase tracking-[0.16em] text-white/45">{event.kind}</span>
-                    <span className="text-xs text-white/35">{new Date(event.createdAt).toLocaleTimeString()}</span>
-                    {persona ? <span className="text-xs text-white/35">{persona.name}</span> : null}
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-white/76">{event.message}</p>
-                </div>
-                {event.screenshotPath ? (
-                  <button onClick={() => onOpenScreenshot(event.screenshotPath!)} className="overflow-hidden rounded-md border border-white/10 bg-black/40 sm:w-44">
-                    <Image src={event.screenshotPath} alt="Run event screenshot" width={280} height={150} className="aspect-video w-full object-cover" unoptimized />
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
+    <div className="terminal-panel">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] text-white/50">
+          <Terminal className="h-4 w-4 text-cyan" />
+          {compact ? "runner stream" : "live runner terminal"}
         </div>
+        <span className="font-mono text-xs text-white/36">{events.length} events</span>
+      </div>
+      <div ref={scrollRef} className={`${compact ? "max-h-80" : "max-h-[42rem]"} overflow-auto p-4 font-mono text-xs`}>
+        {visibleEvents.length ? (
+          <div className="space-y-2">
+            {visibleEvents.map((event) => {
+              const persona = personas.find((item) => item.id === event.personaId);
+              return (
+                <div key={event.id} className="grid gap-2 border-l border-white/10 pl-3 sm:grid-cols-[5.25rem_6.75rem_minmax(0,1fr)_auto] sm:items-start">
+                  <span className="text-white/34">{formatEventTime(event.createdAt)}</span>
+                  <span className={`uppercase ${eventKindClass(event.kind)}`}>{event.kind}</span>
+                  <span className="min-w-0 leading-5 text-white/72">
+                    {persona ? <span className="text-white/42">{persona.name}: </span> : null}
+                    {event.message}
+                  </span>
+                  {event.screenshotPath ? (
+                    <button
+                      onClick={() => onOpenScreenshot(event.screenshotPath!)}
+                      className="justify-self-start border border-cyan/20 bg-cyan/[0.08] px-2 py-1 text-cyan transition hover:border-cyan/40 hover:bg-cyan/[0.12]"
+                    >
+                      evidence
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="border-l border-white/10 pl-3 leading-6 text-white/42">Waiting for the first persisted runner event.</div>
+        )}
+        {running ? (
+          <div className="mt-3 border-l border-acid/35 pl-3 leading-6 text-acid">
+            stream=open <span className="cursor-blink">_</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function eventKindClass(kind: RunEvent["kind"]) {
+  const classes: Record<RunEvent["kind"], string> = {
+    discovery: "text-acid",
+    persona: "text-cyan",
+    action: "text-white/66",
+    screenshot: "text-cyan",
+    finding: "text-pink-100",
+    complete: "text-acid",
+    error: "text-pulse"
+  };
+  return classes[kind];
+}
+
+function formatEventTime(value: string) {
+  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function BugCard({ bug, personas, onOpenScreenshot }: { bug: Bug; personas: Persona[]; onOpenScreenshot: (src: string) => void }) {
