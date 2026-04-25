@@ -4,7 +4,23 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, CircleDashed, Code2, Expand, FlaskConical, Loader2, Radar, RefreshCw, SatelliteDish, TriangleAlert, Users, X } from "lucide-react";
+import {
+  Activity,
+  Brain,
+  CheckCircle2,
+  CircleDashed,
+  Code2,
+  Eye,
+  Expand,
+  FlaskConical,
+  Loader2,
+  Radar,
+  RefreshCw,
+  SatelliteDish,
+  TriangleAlert,
+  Users,
+  X
+} from "lucide-react";
 import type { Bug, Persona, Run, RunEvent, ScenarioResult, WebsiteDiscovery } from "@/lib/types";
 import { parseJson } from "@/lib/json";
 
@@ -24,12 +40,15 @@ const severityClass: Record<string, string> = {
   low: "border-cyan/35 bg-cyan/12 text-cyan"
 };
 
+type DashboardSection = "overview" | "understanding" | "bugs" | "personas" | "logs" | "evidence" | "patch";
+
 export default function RunDashboard() {
   const params = useParams<{ id: string }>();
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patch, setPatch] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const [busyAction, setBusyAction] = useState<"verify" | "patch" | null>(null);
 
   const load = useCallback(async () => {
@@ -71,6 +90,7 @@ export default function RunDashboard() {
     const response = await fetch(`/api/runs/${params.id}/patch`, { method: "POST" });
     const payload = (await response.json()) as { patch?: string };
     setPatch(payload.patch ?? "No patch suggestion was generated.");
+    setActiveSection("patch");
     setBusyAction(null);
     void load();
   }
@@ -93,148 +113,370 @@ export default function RunDashboard() {
   const discovery = parseJson<WebsiteDiscovery | null>(bundle.run.discoveryJson, null);
   const latestScreenshot = [...bundle.events].reverse().find((event) => event.screenshotPath)?.screenshotPath ?? discovery?.screenshotPath ?? null;
   const recentEvents = [...bundle.events].slice(-12).reverse();
+  const allScreenshots = Array.from(
+    new Set([
+      ...(discovery?.screenshotPath ? [discovery.screenshotPath] : []),
+      ...bundle.events.map((event) => event.screenshotPath).filter((src): src is string => Boolean(src)),
+      ...bundle.results.flatMap((result) => parseJson<string[]>(result.screenshotsJson, []))
+    ])
+  );
+  const sidebarItems: Array<{ id: DashboardSection; label: string; icon: ReactNode; count?: number }> = [
+    { id: "overview", label: "Overview", icon: <Radar className="h-4 w-4" /> },
+    { id: "understanding", label: "Understanding", icon: <Brain className="h-4 w-4" /> },
+    { id: "bugs", label: "Bugs", icon: <TriangleAlert className="h-4 w-4" />, count: bundle.bugs.length },
+    { id: "personas", label: "Personas", icon: <Users className="h-4 w-4" />, count: bundle.personas.length },
+    { id: "logs", label: "Live logs", icon: <Activity className="h-4 w-4" />, count: bundle.events.length },
+    { id: "evidence", label: "Evidence", icon: <Eye className="h-4 w-4" />, count: allScreenshots.length },
+    { id: "patch", label: "Patch", icon: <Code2 className="h-4 w-4" /> }
+  ];
 
   return (
-    <main className="min-h-screen bg-ink text-white">
+    <main className="min-h-screen overflow-x-hidden bg-ink text-white">
       <div className="grid-sheen fixed inset-0 opacity-50" />
-      <div className="relative mx-auto w-full max-w-7xl px-6 py-7">
-        <header className="flex flex-col gap-5 border-b border-white/10 pb-6 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md border border-acid/35 bg-acid/10">
-                <Radar className="h-5 w-5 text-acid" />
-              </div>
-              <span className="text-xl font-semibold">Argus</span>
-              <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/62">
-                {bundle.run.mode}
-              </span>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] flex-col lg:flex-row">
+        <aside className="border-b border-white/10 bg-black/20 px-4 py-5 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r lg:px-5">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-acid/35 bg-acid/10">
+              <Radar className="h-5 w-5 text-acid" />
             </div>
-            <h1 className="max-w-4xl text-3xl font-semibold leading-tight text-white md:text-5xl">{bundle.run.url}</h1>
-            <p className="mt-3 text-white/60">AI users deployed, website-aware scenarios planned, Playwright evidence captured live.</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={verify}
-              disabled={running || busyAction !== null}
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-white/14 bg-white/7 px-4 font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              {busyAction === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 text-cyan" />}
-              Verify fix
-            </button>
-            <button
-              onClick={generatePatch}
-              disabled={busyAction !== null}
-              className="inline-flex h-11 items-center gap-2 rounded-md bg-acid px-4 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              {busyAction === "patch" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-4 w-4" />}
-              Generate patch
-            </button>
-          </div>
-        </header>
-
-        <section className="grid gap-4 py-6 md:grid-cols-4">
-          <Metric icon={<Users className="h-5 w-5 text-acid" />} label="synthetic users deployed" value={bundle.personas.length} />
-          <Metric icon={<CheckCircle2 className="h-5 w-5 text-acid" />} label="passed flows" value={stats.passed} />
-          <Metric icon={<TriangleAlert className="h-5 w-5 text-pulse" />} label="failed or warning" value={stats.failed + stats.warning} />
-          <Metric icon={running ? <Loader2 className="h-5 w-5 animate-spin text-cyan" /> : <CircleDashed className="h-5 w-5 text-cyan" />} label="run status" value={bundle.run.status} />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="glass rounded-lg p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Progress timeline</h2>
-              <span className="text-sm text-white/55">{progress}%</span>
+            <div>
+              <div className="font-semibold">Argus</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-white/38">{bundle.run.mode} run</div>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+          </div>
+
+          <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.045] p-3">
+            <p className="line-clamp-2 break-all text-sm font-medium text-white/86">{bundle.run.url}</p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-acid transition-all" style={{ width: `${progress}%` }} />
             </div>
-            <div className="mt-5 space-y-3">
-              {recentEvents.length ? (
-                recentEvents.map((event) => {
-                  const persona = bundle.personas.find((item) => item.id === event.personaId);
-                  return (
-                    <div key={event.id} className="flex gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3">
-                      <SatelliteDish className="mt-0.5 h-4 w-4 shrink-0 text-cyan" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{event.message}</p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{persona?.name ?? event.kind}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-white/55">Waiting for the browser runner to report in.</p>
-              )}
+            <div className="mt-2 flex items-center justify-between text-xs text-white/42">
+              <span>{progress}% complete</span>
+              <span>{bundle.run.status}</span>
             </div>
           </div>
 
-          <div className="glass rounded-lg p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Live evidence</h2>
-                <p className="mt-1 text-sm text-white/50">{discovery?.title ? `Scouted: ${discovery.title}` : "Latest screenshot appears here."}</p>
-              </div>
-              {latestScreenshot ? (
-                <button
-                  onClick={() => setLightbox(latestScreenshot)}
-                  className="inline-flex h-10 items-center gap-2 rounded-md border border-white/12 bg-white/7 px-3 text-sm hover:bg-white/10"
-                >
-                  <Expand className="h-4 w-4 text-acid" />
-                  Enlarge
-                </button>
-              ) : null}
-            </div>
-            {latestScreenshot ? (
-              <button onClick={() => setLightbox(latestScreenshot)} className="block w-full overflow-hidden rounded-md border border-white/10 bg-black/40 text-left">
-                <Image src={latestScreenshot} alt="Latest Argus evidence" width={1100} height={680} className="max-h-[28rem] w-full object-cover" unoptimized />
-              </button>
-            ) : (
-              <div className="flex min-h-72 items-center justify-center rounded-md border border-dashed border-white/14 text-white/45">No screenshot captured yet.</div>
-            )}
-          </div>
-        </section>
-
-        <div className="grid gap-6 py-6 lg:grid-cols-[0.88fr_1.12fr]">
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Personas tested</h2>
-            {bundle.personas.map((persona) => (
-              <div key={persona.id} className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">{persona.name}</h3>
-                    <p className="mt-1 text-sm leading-6 text-white/58">{persona.goal}</p>
-                    <p className="mt-2 text-xs leading-5 text-white/42">{persona.behavior}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/55">{persona.riskType}</span>
-                </div>
-              </div>
+          <nav className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+            {sidebarItems.map((item) => (
+              <SidebarButton
+                key={item.id}
+                active={activeSection === item.id}
+                icon={item.icon}
+                label={item.label}
+                count={item.count}
+                onClick={() => setActiveSection(item.id)}
+              />
             ))}
+          </nav>
+        </aside>
+
+        <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <header className="mb-6 flex flex-col gap-4 border-b border-white/10 pb-6 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm uppercase tracking-[0.24em] text-acid">Autonomous QA run</p>
+              <h1 className="mt-2 truncate text-3xl font-semibold leading-tight text-white md:text-5xl">{sectionTitle(activeSection)}</h1>
+              <p className="mt-3 max-w-3xl text-white/58">{sectionDescription(activeSection)}</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={verify}
+                disabled={running || busyAction !== null}
+                className="inline-flex h-11 items-center gap-2 rounded-md border border-white/14 bg-white/7 px-4 font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {busyAction === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 text-cyan" />}
+                Verify fix
+              </button>
+              <button
+                onClick={generatePatch}
+                disabled={busyAction !== null}
+                className="inline-flex h-11 items-center gap-2 rounded-md bg-acid px-4 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {busyAction === "patch" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-4 w-4" />}
+                Generate patch
+              </button>
+            </div>
+          </header>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Metric icon={<Users className="h-5 w-5 text-acid" />} label="synthetic users deployed" value={bundle.personas.length} />
+            <Metric icon={<CheckCircle2 className="h-5 w-5 text-acid" />} label="passed flows" value={stats.passed} />
+            <Metric icon={<TriangleAlert className="h-5 w-5 text-pulse" />} label="failed or warning" value={stats.failed + stats.warning} />
+            <Metric icon={running ? <Loader2 className="h-5 w-5 animate-spin text-cyan" /> : <CircleDashed className="h-5 w-5 text-cyan" />} label="run status" value={bundle.run.status} />
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Bug cards</h2>
-            {bundle.bugs.length ? (
-              bundle.bugs.map((bug) => <BugCard key={bug.id} bug={bug} personas={bundle.personas} onOpenScreenshot={setLightbox} />)
-            ) : (
-              <div className="glass rounded-lg p-8 text-center text-white/60">
-                <FlaskConical className="mx-auto mb-3 h-8 w-8 text-acid" />
-                {running ? "The browser runner is collecting evidence now." : "No bug cards yet. Start or rerun Argus."}
-              </div>
-            )}
-          </section>
+          <div className="mt-6">
+            {activeSection === "overview" ? (
+              <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+                <div className="space-y-6">
+                  <ProgressPanel progress={progress} events={recentEvents} personas={bundle.personas} />
+                  <UnderstandingCard discovery={discovery} compact onOpen={() => setActiveSection("understanding")} />
+                </div>
+                <EvidencePreview latestScreenshot={latestScreenshot} discovery={discovery} onOpenScreenshot={setLightbox} onOpenGallery={() => setActiveSection("evidence")} />
+              </section>
+            ) : null}
+
+            {activeSection === "understanding" ? <UnderstandingCard discovery={discovery} /> : null}
+
+            {activeSection === "bugs" ? (
+              <section className="space-y-4">
+                {bundle.bugs.length ? (
+                  bundle.bugs.map((bug) => <BugCard key={bug.id} bug={bug} personas={bundle.personas} onOpenScreenshot={setLightbox} />)
+                ) : (
+                  <EmptyState icon={<FlaskConical className="h-8 w-8 text-acid" />} text={running ? "The browser runner is collecting evidence now." : "No bug cards yet. Start or rerun Argus."} />
+                )}
+              </section>
+            ) : null}
+
+            {activeSection === "personas" ? (
+              <section className="grid gap-4 xl:grid-cols-2">
+                {bundle.personas.map((persona) => (
+                  <PersonaCard key={persona.id} persona={persona} result={bundle.results.find((result) => result.personaId === persona.id)} />
+                ))}
+              </section>
+            ) : null}
+
+            {activeSection === "logs" ? <RunLogs events={bundle.events} personas={bundle.personas} onOpenScreenshot={setLightbox} /> : null}
+
+            {activeSection === "evidence" ? <EvidenceGallery screenshots={allScreenshots} onOpenScreenshot={setLightbox} /> : null}
+
+            {activeSection === "patch" ? (
+              patch ? (
+                <pre className="max-h-[42rem] overflow-auto rounded-lg border border-acid/25 bg-black/70 p-4 text-sm leading-6 text-white/78">{patch}</pre>
+              ) : (
+                <EmptyState icon={<Code2 className="h-8 w-8 text-acid" />} text="Click Generate patch to create a PR-style diff suggestion." />
+              )
+            ) : null}
+          </div>
         </div>
-
-        {patch ? (
-          <section className="mb-8 rounded-lg border border-acid/25 bg-black/45 p-5">
-            <h2 className="mb-3 text-xl font-semibold">Patch suggestion</h2>
-            <pre className="max-h-[28rem] overflow-auto rounded-md border border-white/10 bg-black/70 p-4 text-sm leading-6 text-white/78">
-              {patch}
-            </pre>
-          </section>
-        ) : null}
       </div>
       {lightbox ? <ScreenshotLightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </main>
+  );
+}
+
+function sectionTitle(section: DashboardSection) {
+  const titles: Record<DashboardSection, string> = {
+    overview: "Run overview",
+    understanding: "What Argus understood",
+    bugs: "Bug cards",
+    personas: "Synthetic users",
+    logs: "Live runner logs",
+    evidence: "Evidence gallery",
+    patch: "Patch suggestion"
+  };
+  return titles[section];
+}
+
+function sectionDescription(section: DashboardSection) {
+  const descriptions: Record<DashboardSection, string> = {
+    overview: "A focused command center for status, latest activity, and current evidence.",
+    understanding: "The discovery scan Argus used to tailor personas and scenario choices.",
+    bugs: "Evidence-backed findings with severity, reproduction, and suggested fixes.",
+    personas: "The website-aware synthetic users deployed against this run.",
+    logs: "A UI-visible stream of what the Playwright runner is doing right now.",
+    evidence: "All screenshots captured during discovery and persona execution.",
+    patch: "PR-style repair guidance generated from the current findings."
+  };
+  return descriptions[section];
+}
+
+function SidebarButton({
+  active,
+  icon,
+  label,
+  count,
+  onClick
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  count?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex min-h-11 items-center justify-between gap-3 rounded-md px-3 text-sm font-medium transition ${
+        active ? "bg-acid text-black" : "border border-white/8 bg-white/[0.035] text-white/68 hover:bg-white/9 hover:text-white"
+      }`}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        {icon}
+        <span className="truncate">{label}</span>
+      </span>
+      {typeof count === "number" ? (
+        <span className={`rounded-full px-2 py-0.5 text-xs ${active ? "bg-black/12 text-black" : "bg-black/24 text-white/45"}`}>{count}</span>
+      ) : null}
+    </button>
+  );
+}
+
+function ProgressPanel({ progress, events, personas }: { progress: number; events: RunEvent[]; personas: Persona[] }) {
+  return (
+    <div className="glass rounded-lg p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Progress timeline</h2>
+        <span className="text-sm text-white/55">{progress}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full rounded-full bg-acid transition-all" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="mt-5 space-y-3">
+        {events.length ? (
+          events.map((event) => {
+            const persona = personas.find((item) => item.id === event.personaId);
+            return (
+              <div key={event.id} className="flex gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3">
+                <SatelliteDish className="mt-0.5 h-4 w-4 shrink-0 text-cyan" />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-sm font-medium">{event.message}</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{persona?.name ?? event.kind}</p>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-sm text-white/55">Waiting for the browser runner to report in.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EvidencePreview({
+  latestScreenshot,
+  discovery,
+  onOpenScreenshot,
+  onOpenGallery
+}: {
+  latestScreenshot: string | null;
+  discovery: WebsiteDiscovery | null;
+  onOpenScreenshot: (src: string) => void;
+  onOpenGallery: () => void;
+}) {
+  return (
+    <div className="glass rounded-lg p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Latest evidence</h2>
+          <p className="mt-1 text-sm text-white/50">{discovery?.title ? `Scouted: ${discovery.title}` : "Latest screenshot appears here."}</p>
+        </div>
+        <button onClick={onOpenGallery} className="rounded-md border border-white/12 bg-white/7 px-3 py-2 text-sm text-white/70 hover:bg-white/10">
+          Gallery
+        </button>
+      </div>
+      {latestScreenshot ? (
+        <button onClick={() => onOpenScreenshot(latestScreenshot)} className="group relative block w-full overflow-hidden rounded-md border border-white/10 bg-black/40 text-left">
+          <Image src={latestScreenshot} alt="Latest Argus evidence" width={1100} height={680} className="max-h-[34rem] w-full object-contain" unoptimized />
+          <span className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-md bg-black/70 px-3 py-2 text-sm opacity-0 transition group-hover:opacity-100">
+            <Expand className="h-4 w-4 text-acid" />
+            Enlarge
+          </span>
+        </button>
+      ) : (
+        <div className="flex min-h-72 items-center justify-center rounded-md border border-dashed border-white/14 text-white/45">No screenshot captured yet.</div>
+      )}
+    </div>
+  );
+}
+
+function UnderstandingCard({ discovery, compact = false, onOpen }: { discovery: WebsiteDiscovery | null; compact?: boolean; onOpen?: () => void }) {
+  const routes = discovery?.routes ?? [];
+  const forms = discovery?.forms ?? [];
+  const buttons = discovery?.buttons ?? [];
+  const hints = discovery?.accessibilityHints ?? [];
+
+  return (
+    <div className="glass rounded-lg p-5">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">What Argus understood</h2>
+          <p className="mt-1 text-sm text-white/50">{discovery?.title || "Discovery summary is still being prepared."}</p>
+        </div>
+        {compact && onOpen ? (
+          <button onClick={onOpen} className="rounded-md border border-white/12 bg-white/7 px-3 py-2 text-sm text-white/70 hover:bg-white/10">
+            Open
+          </button>
+        ) : null}
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <MiniStat label="routes" value={routes.length} />
+        <MiniStat label="forms" value={forms.length} />
+        <MiniStat label="actions" value={buttons.length} />
+      </div>
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <SignalList title="Routes discovered" items={routes} empty="No routes found." limit={compact ? 5 : 16} />
+        <SignalList title="Buttons/actions" items={buttons} empty="No visible actions found." limit={compact ? 5 : 16} />
+        {!compact ? (
+          <>
+            <SignalList
+              title="Forms and inputs"
+              items={forms.map((form) => [form.label, form.placeholder, form.name, form.type].filter(Boolean).join(" / "))}
+              empty="No inputs found."
+              limit={18}
+            />
+            <SignalList title="Accessibility hints" items={hints} empty="No obvious accessibility hints in discovery." limit={12} />
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-black/20 p-3">
+      <div className="text-2xl font-semibold">{value}</div>
+      <div className="text-xs uppercase tracking-[0.16em] text-white/38">{label}</div>
+    </div>
+  );
+}
+
+function SignalList({ title, items, empty, limit }: { title: string; items: string[]; empty: string; limit: number }) {
+  const visible = items.filter(Boolean).slice(0, limit);
+  return (
+    <div className="rounded-md border border-white/10 bg-white/[0.035] p-4">
+      <h3 className="mb-3 text-sm font-semibold text-white/82">{title}</h3>
+      {visible.length ? (
+        <div className="flex flex-wrap gap-2">
+          {visible.map((item, index) => (
+            <span key={`${item}-${index}`} className="max-w-full truncate rounded-full border border-white/10 bg-black/24 px-3 py-1 text-xs text-white/58">
+              {item}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-white/42">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function EvidenceGallery({ screenshots, onOpenScreenshot }: { screenshots: string[]; onOpenScreenshot: (src: string) => void }) {
+  if (!screenshots.length) {
+    return <EmptyState icon={<Eye className="h-8 w-8 text-acid" />} text="No screenshots have been captured yet." />;
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {screenshots.map((src) => (
+        <button key={src} onClick={() => onOpenScreenshot(src)} className="group relative overflow-hidden rounded-lg border border-white/10 bg-black/40 text-left">
+          <Image src={src} alt="Argus evidence screenshot" width={720} height={440} className="aspect-video w-full object-cover transition group-hover:scale-[1.02]" unoptimized />
+          <span className="absolute right-3 top-3 rounded-md bg-black/70 p-2 opacity-0 transition group-hover:opacity-100">
+            <Expand className="h-4 w-4 text-acid" />
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <div className="glass rounded-lg p-8 text-center text-white/58">
+      <div className="mx-auto mb-3 flex justify-center">{icon}</div>
+      <p>{text}</p>
+    </div>
   );
 }
 
@@ -248,9 +490,64 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
+function PersonaCard({ persona, result }: { persona: Persona; result?: ScenarioResult }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">{persona.name}</h3>
+          <p className="mt-1 text-sm leading-6 text-white/62">{persona.goal}</p>
+          <p className="mt-3 text-xs leading-5 text-white/45">{persona.behavior}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/55">{persona.riskType}</span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-white/38">
+        <span>{persona.viewport}</span>
+        <span>/</span>
+        <span>{result?.status ?? "pending"}</span>
+      </div>
+    </div>
+  );
+}
+
+function RunLogs({ events, personas, onOpenScreenshot }: { events: RunEvent[]; personas: Persona[]; onOpenScreenshot: (src: string) => void }) {
+  if (!events.length) {
+    return <div className="glass rounded-lg p-8 text-center text-white/55">Waiting for the first runner event.</div>;
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/35">
+      <div className="max-h-[42rem] overflow-auto p-4">
+        <div className="space-y-3">
+          {[...events].reverse().map((event) => {
+            const persona = personas.find((item) => item.id === event.personaId);
+            return (
+              <div key={event.id} className="grid gap-3 rounded-md border border-white/10 bg-white/[0.045] p-3 sm:grid-cols-[1fr_auto]">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-white/10 bg-black/24 px-2 py-1 text-xs uppercase tracking-[0.16em] text-white/45">{event.kind}</span>
+                    <span className="text-xs text-white/35">{new Date(event.createdAt).toLocaleTimeString()}</span>
+                    {persona ? <span className="text-xs text-white/35">{persona.name}</span> : null}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-white/76">{event.message}</p>
+                </div>
+                {event.screenshotPath ? (
+                  <button onClick={() => onOpenScreenshot(event.screenshotPath!)} className="overflow-hidden rounded-md border border-white/10 bg-black/40 sm:w-44">
+                    <Image src={event.screenshotPath} alt="Run event screenshot" width={280} height={150} className="aspect-video w-full object-cover" unoptimized />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BugCard({ bug, personas, onOpenScreenshot }: { bug: Bug; personas: Persona[]; onOpenScreenshot: (src: string) => void }) {
   const persona = personas.find((item) => item.id === bug.personaId);
-  const steps = parseJson<Array<{ label: string; ok: boolean; detail?: string }>>(bug.reproductionStepsJson, []);
+  const steps = normalizeReproductionSteps(bug.reproductionStepsJson);
   const evidence = parseJson<{ screenshots?: string[]; consoleErrors?: string[]; networkErrors?: string[]; summary?: string }>(bug.evidenceJson, {});
   const screenshots = evidence.screenshots ?? [];
 
@@ -288,11 +585,15 @@ function BugCard({ bug, personas, onOpenScreenshot }: { bug: Bug; personas: Pers
 
       <div className="mt-4 rounded-md border border-white/10 bg-black/24 p-4">
         <p className="mb-2 text-sm font-semibold text-white/80">Reproduction steps</p>
-        <ol className="space-y-2 text-sm leading-6 text-white/62">
-          {steps.slice(0, 5).map((step, index) => (
-            <li key={`${step.label}-${index}`}>{index + 1}. {step.label}{step.detail ? `: ${step.detail}` : ""}</li>
-          ))}
-        </ol>
+        {steps.length ? (
+          <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-white/62">
+            {steps.slice(0, 7).map((step, index) => (
+              <li key={`${step}-${index}`}>{step}</li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-sm leading-6 text-white/50">No structured reproduction steps were returned. Use the evidence screenshots and suggested fix to reproduce this finding.</p>
+        )}
       </div>
 
       <p className="mt-4 text-sm leading-6 text-white/68">{bug.suggestedFix}</p>
@@ -301,6 +602,44 @@ function BugCard({ bug, personas, onOpenScreenshot }: { bug: Bug; personas: Pers
       ) : null}
     </article>
   );
+}
+
+function normalizeReproductionSteps(value: string) {
+  const parsed = parseJson<unknown>(value, value);
+  const rawSteps = extractStepCandidates(parsed);
+  return rawSteps
+    .map((step) => step.replace(/^\s*\d+[\).\s-]+/, "").trim())
+    .filter(Boolean)
+    .filter((step, index, list) => list.indexOf(step) === index);
+}
+
+function extractStepCandidates(value: unknown): string[] {
+  if (typeof value === "string") {
+    const reparsed = parseJson<unknown>(value, null);
+    if (reparsed && reparsed !== value) return extractStepCandidates(reparsed);
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractStepCandidates(item));
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const direct = record.label ?? record.step ?? record.action ?? record.text ?? record.description ?? record.instruction;
+    const detail = record.detail ?? record.expected ?? record.result;
+    if (typeof direct === "string" && direct.trim()) {
+      return [typeof detail === "string" && detail.trim() ? `${direct}: ${detail}` : direct];
+    }
+    for (const key of ["steps", "reproductionSteps", "reproduction", "items"]) {
+      if (key in record) return extractStepCandidates(record[key]);
+    }
+  }
+
+  return [];
 }
 
 function ScreenshotLightbox({ src, onClose }: { src: string; onClose: () => void }) {

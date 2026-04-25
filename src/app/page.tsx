@@ -1,14 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Flame, Radar, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, Flame, Loader2, Radar, ShieldAlert, Sparkles } from "lucide-react";
+
+const launchStages = [
+  "Validating target URL",
+  "Opening Playwright scout browser",
+  "Reading headings, links, buttons, and forms",
+  "Generating website-aware synthetic users",
+  "Starting autonomous QA runner"
+];
 
 export default function Home() {
   const router = useRouter();
   const [url, setUrl] = useState("https://example.com");
   const [loading, setLoading] = useState<"normal" | "chaos" | null>(null);
+  const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setStageIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setStageIndex((current) => Math.min(current + 1, launchStages.length - 1));
+    }, 1300);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   async function launch(mode: "normal" | "chaos") {
     setError(null);
@@ -86,7 +106,7 @@ export default function Home() {
                 </button>
               </div>
               {error ? <p className="mt-3 px-1 text-sm text-pulse">{error}</p> : null}
-              {loading ? <p className="mt-3 px-1 text-sm text-white/62">Creating synthetic users and opening the browser runner...</p> : null}
+              {loading ? <LaunchProgress mode={loading} stageIndex={stageIndex} /> : null}
             </div>
           </div>
 
@@ -115,5 +135,37 @@ export default function Home() {
         </div>
       </section>
     </main>
+  );
+}
+
+function LaunchProgress({ mode, stageIndex }: { mode: "normal" | "chaos"; stageIndex: number }) {
+  return (
+    <div className="mt-4 rounded-md border border-white/10 bg-white/[0.045] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Loader2 className="h-4 w-4 animate-spin text-acid" />
+          Launching {mode === "chaos" ? "Chaos Mode" : "Argus"}
+        </div>
+        <span className="text-xs uppercase tracking-[0.18em] text-white/42">setup</span>
+      </div>
+      <div className="space-y-2">
+        {launchStages.map((stage, index) => {
+          const done = index < stageIndex;
+          const active = index === stageIndex;
+          return (
+            <div key={stage} className="flex items-center gap-3 text-sm">
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                  done ? "border-acid bg-acid text-black" : active ? "border-cyan text-cyan" : "border-white/12 text-white/25"
+                }`}
+              >
+                {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : active ? <span className="h-1.5 w-1.5 rounded-full bg-cyan" /> : null}
+              </span>
+              <span className={done || active ? "text-white/78" : "text-white/35"}>{stage}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
