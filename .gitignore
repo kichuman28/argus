@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+coverage
+.env
+.env*.local
+argus.sqlite
+argus.sqlite-*
+*.tsbuildinfo
+dev-server*.log
+public/runs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+playwright-report
+test-results
