@@ -31,6 +31,10 @@ export type Run = {
   discoveryJson: string | null;
 };
 
+export type RecentRunSummary = Pick<Run, "id" | "url" | "mode" | "status" | "createdAt" | "finishedAt"> & {
+  bugCount: number;
+};
+
 export type ScenarioStep = {
   label: string;
   ok: boolean;

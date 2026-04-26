@@ -16,6 +16,7 @@ import { createId, nowIso } from "./ids";
 import { inputForRisk, viewportForPersona } from "./personas";
 import { parseJson, stringifyJson } from "./json";
 import type { Persona, Run, RunEventKind, ScenarioResult, ScenarioStatus, ScenarioStep, WebsiteDiscovery } from "./types";
+import { argusPath } from "./paths";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -109,7 +110,7 @@ function selectPersonasForPurpose(runId: string, purpose: "full" | "verify") {
 async function runPersona(browser: Browser, run: Run, persona: Persona): Promise<ScenarioResult> {
   const startedAt = nowIso();
   const resultId = createId("scenario");
-  const runDir = path.join(process.cwd(), "public", "runs", run.id);
+  const runDir = argusPath("public", "runs", run.id);
   fs.mkdirSync(runDir, { recursive: true });
 
   const context = await browser.newContext({
@@ -258,7 +259,7 @@ async function accessibilityProbe(page: Page, steps: ScenarioStep[]) {
 async function screenshot(page: Page, runId: string, persona: Persona, label: string, screenshots: string[]) {
   const safePersona = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const fileName = `${safePersona}-${label}-${Date.now()}.png`;
-  const diskPath = path.join(process.cwd(), "public", "runs", runId, fileName);
+  const diskPath = argusPath("public", "runs", runId, fileName);
   fs.mkdirSync(path.dirname(diskPath), { recursive: true });
   await page.screenshot({ path: diskPath, fullPage: true }).catch(() => undefined);
   const publicPath = `/runs/${runId}/${fileName}`;

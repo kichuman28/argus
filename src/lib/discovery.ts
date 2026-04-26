@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
 import type { WebsiteDiscovery } from "./types";
+import { argusPath } from "./paths";
 
 export async function discoverWebsite(runId: string, url: string): Promise<WebsiteDiscovery> {
   const fallback = fallbackDiscovery(url);
@@ -104,7 +105,7 @@ export function fallbackDiscovery(url: string): WebsiteDiscovery {
 
 async function captureDiscoveryScreenshot(page: { screenshot: (options: { path: string; fullPage: boolean }) => Promise<Buffer> }, runId: string) {
   const fileName = `discovery-${Date.now()}.png`;
-  const diskPath = path.join(process.cwd(), "public", "runs", runId, fileName);
+  const diskPath = argusPath("public", "runs", runId, fileName);
   fs.mkdirSync(path.dirname(diskPath), { recursive: true });
   await page.screenshot({ path: diskPath, fullPage: true });
   return `/runs/${runId}/${fileName}`;

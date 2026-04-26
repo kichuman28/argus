@@ -7,13 +7,15 @@ import { useParams } from "next/navigation";
 import {
   Activity,
   Brain,
+  Check,
   CheckCircle2,
   CircleDashed,
-  Code2,
+  Copy,
   Eye,
   Expand,
   FlaskConical,
   Loader2,
+  Plug,
   Radar,
   RefreshCw,
   Terminal,
@@ -33,6 +35,16 @@ type Bundle = {
   active?: boolean;
 };
 
+type McpConfig = {
+  argusRoot: string;
+  publicUrl: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  vscodeMcpJson: string;
+  codexPrompt: string;
+};
+
 const severityClass: Record<string, string> = {
   critical: "border-red-400/40 bg-red-500/15 text-red-100",
   high: "border-pulse/45 bg-pulse/14 text-pink-100",
@@ -40,16 +52,17 @@ const severityClass: Record<string, string> = {
   low: "border-cyan/35 bg-cyan/12 text-cyan"
 };
 
-type DashboardSection = "overview" | "understanding" | "bugs" | "personas" | "logs" | "evidence" | "patch";
+type DashboardSection = "overview" | "understanding" | "bugs" | "personas" | "logs" | "evidence" | "mcp";
 
 export default function RunDashboard() {
   const params = useParams<{ id: string }>();
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [patch, setPatch] = useState<string | null>(null);
+  const [mcpConfig, setMcpConfig] = useState<McpConfig | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
-  const [busyAction, setBusyAction] = useState<"verify" | "patch" | null>(null);
+  const [busyAction, setBusyAction] = useState<"verify" | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/runs/${params.id}`, { cache: "no-store" });
@@ -67,6 +80,20 @@ export default function RunDashboard() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMcpConfig() {
+      const response = await fetch(`/api/mcp/config?runId=${encodeURIComponent(params.id)}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = (await response.json()) as McpConfig;
+      if (!cancelled) setMcpConfig(payload);
+    }
+    void loadMcpConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
+
   const stats = useMemo(() => {
     const results = bundle?.results ?? [];
     return {
@@ -76,8 +103,18 @@ export default function RunDashboard() {
     };
   }, [bundle?.results]);
 
+  const verification = useMemo(() => {
+    const bugs = bundle?.bugs ?? [];
+    return {
+      open: bugs.filter((bug) => bug.status === "open").length,
+      verified: bugs.filter((bug) => bug.status === "verified_fixed").length,
+      stillFailing: bugs.filter((bug) => bug.status === "still_failing").length
+    };
+  }, [bundle?.bugs]);
+
   async function verify() {
     setBusyAction("verify");
+    setActiveSection("logs");
     await fetch(`/api/runs/${params.id}/verify`, { method: "POST" });
     setTimeout(() => {
       setBusyAction(null);
@@ -85,14 +122,10 @@ export default function RunDashboard() {
     }, 900);
   }
 
-  async function generatePatch() {
-    setBusyAction("patch");
-    const response = await fetch(`/api/runs/${params.id}/patch`, { method: "POST" });
-    const payload = (await response.json()) as { patch?: string };
-    setPatch(payload.patch ?? "No patch suggestion was generated.");
-    setActiveSection("patch");
-    setBusyAction(null);
-    void load();
+  async function copyText(key: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1600);
   }
 
   if (error) {
@@ -126,7 +159,7 @@ export default function RunDashboard() {
     { id: "personas", label: "Personas", icon: <Users className="h-4 w-4" />, count: bundle.personas.length },
     { id: "logs", label: "Live logs", icon: <Activity className="h-4 w-4" />, count: bundle.events.length },
     { id: "evidence", label: "Evidence", icon: <Eye className="h-4 w-4" />, count: allScreenshots.length },
-    { id: "patch", label: "Patch", icon: <Code2 className="h-4 w-4" /> }
+    { id: "mcp", label: "MCP setup", icon: <Plug className="h-4 w-4" /> }
   ];
 
   return (
@@ -178,20 +211,19 @@ export default function RunDashboard() {
             </div>
             <div className="flex flex-wrap gap-3">
               <button
+                onClick={() => setActiveSection("mcp")}
+                className="inline-flex h-11 items-center gap-2 rounded-md border border-white/14 bg-white/7 px-4 font-medium text-white transition hover:bg-white/10"
+              >
+                <Plug className="h-4 w-4 text-acid" />
+                MCP setup
+              </button>
+              <button
                 onClick={verify}
                 disabled={running || busyAction !== null}
                 className="inline-flex h-11 items-center gap-2 rounded-md border border-white/14 bg-white/7 px-4 font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {busyAction === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 text-cyan" />}
-                Verify fix
-              </button>
-              <button
-                onClick={generatePatch}
-                disabled={busyAction !== null}
-                className="inline-flex h-11 items-center gap-2 rounded-md bg-acid px-4 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {busyAction === "patch" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-4 w-4" />}
-                Generate patch
+                Verify fixes
               </button>
             </div>
           </header>
@@ -238,12 +270,18 @@ export default function RunDashboard() {
 
             {activeSection === "evidence" ? <EvidenceGallery screenshots={allScreenshots} onOpenScreenshot={setLightbox} /> : null}
 
-            {activeSection === "patch" ? (
-              patch ? (
-                <pre className="max-h-[42rem] overflow-auto rounded-lg border border-acid/25 bg-black/70 p-4 text-sm leading-6 text-white/78">{patch}</pre>
-              ) : (
-                <EmptyState icon={<Code2 className="h-8 w-8 text-acid" />} text="Click Generate patch to create a PR-style diff suggestion." />
-              )
+            {activeSection === "mcp" ? (
+              <McpHandoffPanel
+                config={mcpConfig}
+                copiedKey={copiedKey}
+                runId={bundle.run.id}
+                targetUrl={bundle.run.url}
+                verification={verification}
+                verifying={busyAction === "verify"}
+                running={running}
+                onCopy={copyText}
+                onVerify={verify}
+              />
             ) : null}
           </div>
         </div>
@@ -261,7 +299,7 @@ function sectionTitle(section: DashboardSection) {
     personas: "Synthetic users",
     logs: "Live runner logs",
     evidence: "Evidence gallery",
-    patch: "Patch suggestion"
+    mcp: "MCP handoff"
   };
   return titles[section];
 }
@@ -274,7 +312,7 @@ function sectionDescription(section: DashboardSection) {
     personas: "The website-aware synthetic users deployed against this run.",
     logs: "A UI-visible stream of what the Playwright runner is doing right now.",
     evidence: "All screenshots captured during discovery and persona execution.",
-    patch: "PR-style repair guidance generated from the current findings."
+    mcp: "Connect Codex from the target repo, pull the repair brief, then rerun failed personas here."
   };
   return descriptions[section];
 }
@@ -456,6 +494,152 @@ function EmptyState({ icon, text }: { icon: ReactNode; text: string }) {
       <p>{text}</p>
     </div>
   );
+}
+
+function McpHandoffPanel({
+  config,
+  copiedKey,
+  runId,
+  targetUrl,
+  verification,
+  verifying,
+  running,
+  onCopy,
+  onVerify
+}: {
+  config: McpConfig | null;
+  copiedKey: string | null;
+  runId: string;
+  targetUrl: string;
+  verification: { open: number; verified: number; stillFailing: number };
+  verifying: boolean;
+  running: boolean;
+  onCopy: (key: string, value: string) => Promise<void>;
+  onVerify: () => Promise<void>;
+}) {
+  if (!config) {
+    return <EmptyState icon={<Plug className="h-8 w-8 text-acid" />} text="Preparing the MCP connection details for this run." />;
+  }
+
+  const commandLine = formatCommand(config.command, config.args);
+
+  return (
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.72fr)]">
+      <div className="terminal-panel">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] text-white/50">
+            <Terminal className="h-4 w-4 text-cyan" />
+            target repo handoff
+          </div>
+          <span className="font-mono text-xs text-white/36">stdio</span>
+        </div>
+        <div className="space-y-5 p-4">
+          <CopyableBlock
+            title=".vscode/mcp.json"
+            value={config.vscodeMcpJson}
+            copyKey="mcp-json"
+            copiedKey={copiedKey}
+            onCopy={onCopy}
+          />
+          <CopyableBlock
+            title="Codex prompt"
+            value={config.codexPrompt}
+            copyKey="codex-prompt"
+            copiedKey={copiedKey}
+            onCopy={onCopy}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="glass rounded-lg p-5">
+          <h2 className="text-lg font-semibold">Connection values</h2>
+          <div className="mt-4 space-y-3 font-mono text-xs">
+            <McpValue label="name" value="argus" />
+            <McpValue label="transport" value="stdio" />
+            <McpValue label="command" value={config.command} />
+            <McpValue label="arguments" value={config.args.join(" ")} />
+            <McpValue label="ARGUS_HOME" value={config.argusRoot} />
+            <McpValue label="ARGUS_PUBLIC_URL" value={config.publicUrl} />
+          </div>
+          <button
+            onClick={() => void onCopy("mcp-command", commandLine)}
+            className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-white/12 bg-white/7 px-3 text-sm text-white/72 transition hover:bg-white/10"
+          >
+            {copiedKey === "mcp-command" ? <Check className="h-4 w-4 text-acid" /> : <Copy className="h-4 w-4 text-cyan" />}
+            Copy launch command
+          </button>
+        </div>
+
+        <div className="glass rounded-lg p-5">
+          <h2 className="text-lg font-semibold">Fix verification</h2>
+          <p className="mt-2 break-all text-sm leading-6 text-white/56">{targetUrl}</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <MiniStat label="open" value={verification.open} />
+            <MiniStat label="fixed" value={verification.verified} />
+            <MiniStat label="failing" value={verification.stillFailing} />
+          </div>
+          <div className="mt-4 rounded-md border border-white/10 bg-black/24 p-3 font-mono text-xs leading-6 text-white/58">
+            <p>run={runId}</p>
+            <p>repair=codex-mcp</p>
+            <p>verify={running ? "running" : "ready"}</p>
+          </div>
+          <button
+            onClick={() => void onVerify()}
+            disabled={running || verifying}
+            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-acid px-4 font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Verify fixes
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CopyableBlock({
+  title,
+  value,
+  copyKey,
+  copiedKey,
+  onCopy
+}: {
+  title: string;
+  value: string;
+  copyKey: string;
+  copiedKey: string | null;
+  onCopy: (key: string, value: string) => Promise<void>;
+}) {
+  const copied = copiedKey === copyKey;
+  return (
+    <div className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="font-mono text-xs uppercase tracking-[0.18em] text-white/50">{title}</div>
+        <button
+          onClick={() => void onCopy(copyKey, value)}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-white/12 bg-white/7 px-3 text-sm text-white/70 transition hover:bg-white/10"
+        >
+          {copied ? <Check className="h-4 w-4 text-acid" /> : <Copy className="h-4 w-4 text-cyan" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="max-h-96 overflow-auto p-4 text-xs leading-6 text-white/74">{value}</pre>
+    </div>
+  );
+}
+
+function McpValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 border-b border-white/8 pb-2 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+      <span className="text-white/34">{label}</span>
+      <span className="min-w-0 break-words text-white/72">{value}</span>
+    </div>
+  );
+}
+
+function formatCommand(command: string, args: string[]) {
+  return [command, ...args].map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(" ");
 }
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {

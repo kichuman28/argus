@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
-import path from "node:path";
 import fs from "node:fs";
-import type { Bug, Persona, Run, RunBundle, RunEvent, RunMode, RunStatus, ScenarioResult } from "./types";
+import path from "node:path";
+import type { Bug, Persona, RecentRunSummary, Run, RunBundle, RunEvent, RunMode, RunStatus, ScenarioResult } from "./types";
 import { nowIso } from "./ids";
+import { argusPath } from "./paths";
 
-const dbPath = path.join(process.cwd(), "argus.sqlite");
+const dbPath = argusPath("argus.sqlite");
 let db: Database.Database | null = null;
 
 function getDb() {
@@ -88,6 +89,27 @@ export function updateRunStatus(id: string, status: RunStatus, finished = false)
 
 export function getRun(id: string): Run | null {
   return (getDb().prepare("SELECT * FROM runs WHERE id = ?").get(id) as Run | undefined) ?? null;
+}
+
+export function getRecentRuns(limit = 10): RecentRunSummary[] {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  return getDb()
+    .prepare(
+      `SELECT
+        runs.id,
+        runs.url,
+        runs.mode,
+        runs.status,
+        runs.createdAt,
+        runs.finishedAt,
+        COUNT(bugs.id) AS bugCount
+       FROM runs
+       LEFT JOIN bugs ON bugs.runId = runs.id
+       GROUP BY runs.id
+       ORDER BY runs.createdAt DESC
+       LIMIT ?`
+    )
+    .all(safeLimit) as RecentRunSummary[];
 }
 
 export function updateRunDiscovery(id: string, discoveryJson: string) {
@@ -194,6 +216,11 @@ export function getRunBundle(id: string): RunBundle | null {
     bugs: getBugs(id),
     events: getRunEvents(id)
   };
+}
+
+export function getLatestRunBundle(): RunBundle | null {
+  const latest = getRecentRuns(1)[0];
+  return latest ? getRunBundle(latest.id) : null;
 }
 
 export function normalizeMode(value: unknown): RunMode {
